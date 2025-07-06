@@ -1,0 +1,51 @@
+services:
+  # 1. Web Service (Flask/Gunicorn)
+  - type: web
+    name: study-support-app
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MONITORING_TOKEN
+        generateValue: true
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: redis-broker
+          property: connectionString
+    healthCheckPath: /health
+
+  # 2. Background Worker (Celery)
+  - type: worker
+    name: celery-worker
+    runtime: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A app.celery worker --loglevel=info"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: OPENAI_API_KEY
+        fromService:
+          type: web
+          name: study-support-app
+          envVarKey: OPENAI_API_KEY
+      - key: MONITORING_TOKEN
+        fromService:
+          type: web
+          name: study-support-app
+          envVarKey: MONITORING_TOKEN
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: redis-broker
+          property: connectionString
+
+  # 3. Redis Instance (Celery Broker)
+  - type: redis
+    name: redis-broker
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
