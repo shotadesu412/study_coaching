@@ -252,7 +252,7 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image):
         metrics.record_api_call('openai_vision')
         
         gpt_response = client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4.1 mini",
             messages=[
                 {
                     "role": "user",
