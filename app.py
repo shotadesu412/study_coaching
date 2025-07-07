@@ -140,7 +140,7 @@ def monitor_performance(endpoint_name):
     return decorator
 
 # データベース関連
-DATABASE_PATH = os.path.join(os.getenv('RENDER_DISK_PATH', '/var/data/render'), 'history.db')
+DATABASE_PATH = os.path.join('/var/data', 'history.db')
 
 def get_db_connection():
     """データベース接続を取得する"""
