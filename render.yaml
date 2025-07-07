@@ -4,7 +4,8 @@ services:
     name: study-support-app
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
+    # --workers 1 を追加してリソース消費を安定させます
+    startCommand: "gunicorn --workers 1 app:app"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -18,6 +19,11 @@ services:
           name: redis-broker
           property: connectionString
     healthCheckPath: /health
+    # 永続ディスクを作成し、SQLiteデータベースを保存します
+    disks:
+      - name: data
+        mountPath: /var/data
+        sizeGB: 1
 
   # 2. Background Worker (Celery)
   - type: worker
@@ -43,6 +49,14 @@ services:
           type: redis
           name: redis-broker
           property: connectionString
+    # Webサービスで作成した永続ディスクを共有します
+    disks:
+      - name: data
+        mountPath: /var/data
+        fromService:
+          type: web
+          name: study-support-app
+          diskName: data
 
   # 3. Redis Instance (Celery Broker)
   - type: redis
