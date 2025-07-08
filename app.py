@@ -140,7 +140,7 @@ def monitor_performance(endpoint_name):
     return decorator
 
 # データベース関連
-DATABASE_PATH = os.path.join('/var/data', 'history.db')
+DATABASE_PATH = os.path.join(os.getenv('RENDER_DISK_PATH', '/var/data/render'), 'history.db')
 
 def get_db_connection():
     """データベース接続を取得する"""
@@ -207,7 +207,7 @@ def init_db():
         conn.close()
 
 # アプリケーション起動時にデータベースを初期化する
-#init_db()
+init_db()
 
 # Celeryタスク: 画像解析の非同期処理
 @celery.task(bind=True, max_retries=3)
@@ -252,7 +252,7 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image):
         metrics.record_api_call('openai_vision')
         
         gpt_response = client.chat.completions.create(
-            model="gpt-4.1 mini",
+            model="gpt-4.1",
             messages=[
                 {
                     "role": "user",

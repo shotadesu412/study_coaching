@@ -30,7 +30,7 @@ services:
     name: celery-worker
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A app.celery worker --loglevel=info"
+    startCommand: "python init_db.py && celery -A app.celery worker --loglevel=info"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
