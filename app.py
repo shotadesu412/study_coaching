@@ -34,14 +34,17 @@ REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 # Celery設定
-app.config['CELERY_BROKER_URL'] = REDIS_URL
-app.config['CELERY_RESULT_BACKEND'] = REDIS_URL
-
-celery = Celery(app.name, broker=app.config['CELERY_BROKER_URL'])
-celery.conf.update(app.config)
+celery = Celery(
+    app.name,
+    broker=REDIS_URL,
+    result_backend=REDIS_URL
+)
+# アプリケーションの他の設定をCeleryに反映させる場合は下の行を残します
+# celery.conf.update(app.config)
 
 # OpenAIクライアント
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 
 # 監視用のメトリクス保存
 class MetricsCollector:
