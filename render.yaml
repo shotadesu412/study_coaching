@@ -10,7 +10,7 @@ services:
   - type: web
     name: study-support-app
     runtime: python
-    plan: free # Webサービスは無料プランのまま
+    plan: Free # ユーザーの要求に応じて更新
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python init_db.py && gunicorn --workers 2 --threads 2 --timeout 60 app:app"
     envVars:
@@ -33,7 +33,7 @@ services:
   - type: worker
     name: celery-worker
     runtime: python
-    plan: free # Workerは無料プランのまま
+    plan: plan-srv-012 # ユーザーの要求に応じて更新
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python init_db.py && celery -A app.celery worker --loglevel=info"
     envVars:
@@ -57,8 +57,6 @@ services:
   # 3. Redis Instance (Celery Broker)
   - type: redis
     name: redis-broker
-    # ▼▼▼ この部分を修正しました ▼▼▼
     plan: starter # 既存のプランに合わせて 'starter' に変更
-    # ▲▲▲ この部分を修正しました ▲▲▲
     ipAllowList: []
     maxmemoryPolicy: allkeys-lru
