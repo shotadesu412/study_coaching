@@ -4,13 +4,14 @@ services:
     name: study-support-app
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python init_db.py && gunicorn --workers 1 app:app"
+    # ▼ startCommandをデバッグ用に変更
+    startCommand: "echo '--- Debug Start ---'; ls -la /var/; ls -la /var/data || echo '/var/data not found'; python init_db.py; echo '--- After init_db ---'; ls -la /var/data; echo '--- Debug End ---'; gunicorn --workers 1 app:app"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: OPENAI_API_KEY
         sync: false
-      - key: MONITORING_TOKEN # このキーはもう使われませんが、削除しても問題ありません
+      - key: MONITORING_TOKEN
         generateValue: true
       - key: REDIS_URL
         fromService:
@@ -28,7 +29,8 @@ services:
     name: celery-worker
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python init_db.py && celery -A app.celery worker --loglevel=info"
+    # ▼ startCommandをデバッグ用に変更
+    startCommand: "echo '--- Debug Start ---'; ls -la /var/; ls -la /var/data || echo '/var/data not found'; python init_db.py; echo '--- After init_db ---'; ls -la /var/data; echo '--- Debug End ---'; celery -A app.celery worker --loglevel=info"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -37,7 +39,7 @@ services:
           type: web
           name: study-support-app
           envVarKey: OPENAI_API_KEY
-      - key: MONITORING_TOKEN # このキーはもう使われませんが、削除しても問題ありません
+      - key: MONITORING_TOKEN
         fromService:
           type: web
           name: study-support-app
