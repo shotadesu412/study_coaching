@@ -2,16 +2,16 @@ from flask import Flask, request, jsonify, render_template, send_from_directory
 from openai import OpenAI
 import os
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
-from werkzeug.utils import secure_filename
-import sqlite3
+import uuid
 import logging
 from functools import wraps
 import time
-import uuid
 from celery import Celery
 import redis
+import psycopg2
+import psycopg2.extras
 
 # ログ設定
 logging.basicConfig(
@@ -42,6 +42,9 @@ celery.conf.update(
 # OpenAIクライアント
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# PostgreSQL データベース接続情報
+DATABASE_URL = os.getenv('DATABASE_URL')
+
 # レート制限用のデコレーター
 def rate_limit(max_calls=10, period=60):
     calls = {}
@@ -52,14 +55,11 @@ def rate_limit(max_calls=10, period=60):
             user_id = request.form.get('user_id', request.args.get('user_id', 'default_user'))
             now = time.time()
             
-            # ユーザーごとの呼び出し履歴を初期化
             if user_id not in calls:
                 calls[user_id] = []
             
-            # 期限切れの呼び出しを削除
             calls[user_id] = [call_time for call_time in calls[user_id] if call_time > now - period]
             
-            # レート制限チェック
             if len(calls[user_id]) >= max_calls:
                 return jsonify({"error": f"{period}秒間に{max_calls}回までしかリクエストできません"}), 429
             
@@ -69,49 +69,52 @@ def rate_limit(max_calls=10, period=60):
     return decorator
 
 # データベース関連
-DATABASE_PATH = os.path.join('/var/data', 'history.db')
-
 def get_db_connection():
     """データベース接続を取得する"""
-    conn = sqlite3.connect(DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 def init_db():
     """データベースのテーブルを初期化"""
     with app.app_context():
-        conn = get_db_connection()
-        with conn:
-            # 履歴テーブル
-            conn.execute('''
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                school_id TEXT,
-                image_base64 TEXT NOT NULL,
-                explanation TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            ''')
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                # 履歴テーブル
+                cur.execute('''
+                CREATE TABLE IF NOT EXISTS history (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    school_id VARCHAR(255),
+                    image_base64 TEXT NOT NULL,
+                    explanation TEXT NOT NULL,
+                    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+                ''')
+                
+                # タスクステータステーブル
+                cur.execute('''
+                CREATE TABLE IF NOT EXISTS task_status (
+                    task_id VARCHAR(255) PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    status VARCHAR(50) NOT NULL,
+                    result TEXT,
+                    error_message TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                )
+                ''')
+                
+                # インデックスの作成
+                cur.execute('CREATE INDEX IF NOT EXISTS idx_history_user_timestamp ON history(user_id, timestamp DESC)')
+                cur.execute('CREATE INDEX IF NOT EXISTS idx_task_status_user ON task_status(user_id, created_at DESC)')
             
-            # タスクステータステーブル
-            conn.execute('''
-            CREATE TABLE IF NOT EXISTS task_status (
-                task_id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                result TEXT,
-                error_message TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            ''')
-            
-            # インデックスの作成
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_history_user_timestamp ON history(user_id, timestamp DESC)')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_task_status_user ON task_status(user_id, created_at DESC)')
-            
-        conn.close()
+            conn.commit()
+            conn.close()
+            logger.info("Database tables initialized successfully.")
+        except Exception as e:
+            logger.error(f"Error initializing database: {e}")
+
 
 # Celeryタスク: 画像解析の非同期処理
 @celery.task(bind=True, max_retries=3)
@@ -168,13 +171,12 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image):
         
         explanation_text = gpt_response.choices[0].message.content.strip()
         
-        conn = get_db_connection()
-        with conn:
-            conn.execute(
-                "INSERT INTO history (user_id, school_id, image_base64, explanation, timestamp) VALUES (?, ?, ?, ?, ?)",
-                (user_id, school_id, base64_image, explanation_text, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            )
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO history (user_id, school_id, image_base64, explanation, timestamp) VALUES (%s, %s, %s, %s, %s)",
+                    (user_id, school_id, base64_image, explanation_text, datetime.now())
+                )
         
         update_task_status(task_id, 'completed', result=explanation_text)
         
@@ -199,25 +201,24 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image):
 def update_task_status(task_id, status, result=None, error_message=None):
     """タスクのステータスを更新"""
     try:
-        conn = get_db_connection()
-        with conn:
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            if result:
-                conn.execute(
-                    "UPDATE task_status SET status = ?, result = ?, updated_at = ? WHERE task_id = ?",
-                    (status, result, now_str, task_id)
-                )
-            elif error_message:
-                conn.execute(
-                    "UPDATE task_status SET status = ?, error_message = ?, updated_at = ? WHERE task_id = ?",
-                    (status, error_message, now_str, task_id)
-                )
-            else:
-                conn.execute(
-                    "UPDATE task_status SET status = ?, updated_at = ? WHERE task_id = ?",
-                    (status, now_str, task_id)
-                )
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                now = datetime.now()
+                if result:
+                    cur.execute(
+                        "UPDATE task_status SET status = %s, result = %s, updated_at = %s WHERE task_id = %s",
+                        (status, result, now, task_id)
+                    )
+                elif error_message:
+                    cur.execute(
+                        "UPDATE task_status SET status = %s, error_message = %s, updated_at = %s WHERE task_id = %s",
+                        (status, error_message, now, task_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE task_status SET status = %s, updated_at = %s WHERE task_id = %s",
+                        (status, now, task_id)
+                    )
     except Exception as e:
         logger.error(f"Error updating task status: {str(e)}")
 
@@ -265,13 +266,12 @@ def upload():
         base64_image = base64.b64encode(image_data).decode('utf-8')
         task_id = str(uuid.uuid4())
         
-        conn = get_db_connection()
-        with conn:
-            conn.execute(
-                "INSERT INTO task_status (task_id, user_id, status) VALUES (?, ?, ?)",
-                (task_id, user_id, 'pending')
-            )
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO task_status (task_id, user_id, status, created_at, updated_at) VALUES (%s, %s, %s, %s, %s)",
+                    (task_id, user_id, 'pending', datetime.now(), datetime.now())
+                )
         
         analyze_image_task.apply_async(args=[task_id, user_id, school_id, base64_image], task_id=task_id)
         
@@ -295,19 +295,20 @@ def get_task_status(task_id):
         if redis_result:
             return jsonify(json.loads(redis_result))
         
-        conn = get_db_connection()
-        task = conn.execute("SELECT * FROM task_status WHERE task_id = ?", (task_id,)).fetchone()
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT * FROM task_status WHERE task_id = %s", (task_id,))
+                task = cur.fetchone()
         
         if not task:
             return jsonify({"error": "タスクが見つかりません"}), 404
         
         response = dict(task)
-        if task['status'] == 'completed' and task['result']:
-            response['result'] = task['result']
-        elif task['status'] == 'failed' and task['error_message']:
-            response['error'] = task['error_message']
-        
+        # Convert datetime objects to string
+        for key, value in response.items():
+            if isinstance(value, datetime):
+                response[key] = value.isoformat()
+
         return jsonify(response)
         
     except Exception as e:
@@ -323,15 +324,21 @@ def get_history():
         limit = min(int(request.args.get('limit', 20)), 100)
         offset = int(request.args.get('offset', 0))
         
-        conn = get_db_connection()
-        history_rows = conn.execute(
-            "SELECT * FROM history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?",
-            (user_id, limit, offset)
-        ).fetchall()
-        history = [dict(row) for row in history_rows]
-        
-        total_count = conn.execute("SELECT COUNT(*) as total FROM history WHERE user_id = ?", (user_id,)).fetchone()['total']
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM history WHERE user_id = %s ORDER BY timestamp DESC LIMIT %s OFFSET %s",
+                    (user_id, limit, offset)
+                )
+                history_rows = cur.fetchall()
+                history = [dict(row) for row in history_rows]
+
+                cur.execute("SELECT COUNT(*) as total FROM history WHERE user_id = %s", (user_id,))
+                total_count = cur.fetchone()['total']
+
+        # Convert datetime objects to string
+        for item in history:
+            item['timestamp'] = item['timestamp'].isoformat()
         
         return jsonify({"history": history, "total": total_count, "limit": limit, "offset": offset})
         
@@ -342,19 +349,21 @@ def get_history():
 # ヘルスチェック
 @app.route('/health', methods=['GET'])
 def health_check():
+    db_status = "unhealthy"
+    redis_status = "unhealthy"
     try:
-        conn = get_db_connection()
-        conn.execute("SELECT 1")
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
         db_status = "healthy"
-    except:
-        db_status = "unhealthy"
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
     
     try:
         redis_client.ping()
         redis_status = "healthy"
-    except:
-        redis_status = "unhealthy"
+    except Exception as e:
+        logger.error(f"Redis health check failed: {e}")
         
     status = "healthy" if db_status == "healthy" and redis_status == "healthy" else "degraded"
     
@@ -375,8 +384,10 @@ def too_many_requests(error):
 
 @app.errorhandler(500)
 def internal_error(error):
+    logger.error(f"Server Error: {error}")
     return jsonify({"error": "サーバーエラーが発生しました。しばらくしてからもう一度お試しください。"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    # init_db() # 開発環境で起動時に初期化する場合
     app.run(host="0.0.0.0", port=port, debug=False)

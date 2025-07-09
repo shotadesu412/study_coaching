@@ -6,3 +6,4 @@ httpx==0.25.2
 psutil
 celery==5.3.4
 redis==5.0.1
+psycopg2-binary==2.9.9
