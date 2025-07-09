@@ -4,8 +4,7 @@ services:
     name: study-support-app
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    # ▼ テスト用のコマンドに変更
-    startCommand: "echo '[Web Service] Hello from render.yaml!' && sleep 300"
+    startCommand: "python init_db.py && gunicorn --workers 1 app:app"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -27,8 +26,7 @@ services:
     name: celery-worker
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    # ▼ テスト用のコマンドに変更
-    startCommand: "echo '[Celery Worker] Hello from render.yaml!' && ls -la && sleep 300"
+    startCommand: "python init_db.py && celery -A app.celery worker --loglevel=info"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -42,13 +40,12 @@ services:
           type: redis
           name: redis-broker
           property: connectionString
+    # ▼▼▼ この部分を修正しました ▼▼▼
     disks:
       - name: data
         mountPath: /var/data
-        fromService:
-          type: web
-          name: study-support-app
-          diskName: data
+        sizeGB: 1
+    # ▲▲▲ この部分を修正しました ▲▲▲
 
   # 3. Redis Instance (Celery Broker)
   - type: redis
