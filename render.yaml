@@ -10,7 +10,7 @@ services:
   - type: web
     name: study-support-app
     runtime: python
-    plan: Free # ユーザーの要求に応じて更新
+    plan: Free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python init_db.py && gunicorn --workers 2 --threads 2 --timeout 60 app:app"
     envVars:
@@ -33,7 +33,9 @@ services:
   - type: worker
     name: celery-worker
     runtime: python
-    plan: plan-srv-012 # ユーザーの要求に応じて更新
+    # ▼▼▼ この部分を修正しました ▼▼▼
+    plan: Free # 無効なプラン名を 'Free' に修正
+    # ▲▲▲ この部分を修正しました ▲▲▲
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python init_db.py && celery -A app.celery worker --loglevel=info"
     envVars:
