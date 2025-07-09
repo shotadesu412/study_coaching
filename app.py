@@ -210,7 +210,6 @@ def init_db():
         conn.close()
 
 # アプリケーション起動時にデータベースを初期化する
-#init_db()
 
 # Celeryタスク: 画像解析の非同期処理
 @celery.task(bind=True, max_retries=3)
