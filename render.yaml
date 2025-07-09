@@ -34,7 +34,7 @@ services:
     name: celery-worker
     runtime: python
     # ▼▼▼ この部分を修正しました ▼▼▼
-    plan: Free # 無効なプラン名を 'Free' に修正
+    plan: starter # 無効なプラン名を 'Free' に修正
     # ▲▲▲ この部分を修正しました ▲▲▲
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python init_db.py && celery -A app.celery worker --loglevel=info"
