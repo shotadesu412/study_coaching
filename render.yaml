@@ -4,15 +4,13 @@ services:
     name: study-support-app
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    # ▼ startCommandをデバッグ用に変更
-    startCommand: "echo '--- Debug Start ---'; ls -la /var/; ls -la /var/data || echo '/var/data not found'; python init_db.py; echo '--- After init_db ---'; ls -la /var/data; echo '--- Debug End ---'; gunicorn --workers 1 app:app"
+    # ▼ テスト用のコマンドに変更
+    startCommand: "echo '[Web Service] Hello from render.yaml!' && sleep 300"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: OPENAI_API_KEY
         sync: false
-      - key: MONITORING_TOKEN
-        generateValue: true
       - key: REDIS_URL
         fromService:
           type: redis
@@ -29,8 +27,8 @@ services:
     name: celery-worker
     runtime: python
     buildCommand: "pip install -r requirements.txt"
-    # ▼ startCommandをデバッグ用に変更
-    startCommand: "echo '--- Debug Start ---'; ls -la /var/; ls -la /var/data || echo '/var/data not found'; python init_db.py; echo '--- After init_db ---'; ls -la /var/data; echo '--- Debug End ---'; celery -A app.celery worker --loglevel=info"
+    # ▼ テスト用のコマンドに変更
+    startCommand: "echo '[Celery Worker] Hello from render.yaml!' && ls -la && sleep 300"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -39,11 +37,6 @@ services:
           type: web
           name: study-support-app
           envVarKey: OPENAI_API_KEY
-      - key: MONITORING_TOKEN
-        fromService:
-          type: web
-          name: study-support-app
-          envVarKey: MONITORING_TOKEN
       - key: REDIS_URL
         fromService:
           type: redis
