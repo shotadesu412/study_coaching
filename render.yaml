@@ -10,7 +10,7 @@ services:
   - type: web
     name: study-support-app
     runtime: python
-    plan: Free
+    plan: starter
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python init_db.py && gunicorn --workers 2 --threads 2 --timeout 60 app:app"
     envVars:
