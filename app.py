@@ -42,9 +42,6 @@ celery.conf.update(
 # OpenAIクライアント
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# PostgreSQL データベース接続情報
-DATABASE_URL = os.getenv('DATABASE_URL')
-
 # レート制限用のデコレーター
 def rate_limit(max_calls=10, period=60):
     calls = {}
@@ -71,50 +68,53 @@ def rate_limit(max_calls=10, period=60):
 # データベース関連
 def get_db_connection():
     """データベース接続を取得する"""
-    conn = psycopg2.connect(DATABASE_URL)
+    # 接続の都度、環境変数を読み込むことで、起動時のタイミング問題を回避する
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable is not set.")
+    conn = psycopg2.connect(database_url)
     return conn
 
 def init_db():
     """データベースのテーブルを初期化"""
     with app.app_context():
         try:
-            conn = get_db_connection()
-            with conn.cursor() as cur:
-                # 履歴テーブル
-                cur.execute('''
-                CREATE TABLE IF NOT EXISTS history (
-                    id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(255) NOT NULL,
-                    school_id VARCHAR(255),
-                    image_base64 TEXT NOT NULL,
-                    explanation TEXT NOT NULL,
-                    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                )
-                ''')
-                
-                # タスクステータステーブル
-                cur.execute('''
-                CREATE TABLE IF NOT EXISTS task_status (
-                    task_id VARCHAR(255) PRIMARY KEY,
-                    user_id VARCHAR(255) NOT NULL,
-                    status VARCHAR(50) NOT NULL,
-                    result TEXT,
-                    error_message TEXT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-                )
-                ''')
-                
-                # インデックスの作成
-                cur.execute('CREATE INDEX IF NOT EXISTS idx_history_user_timestamp ON history(user_id, timestamp DESC)')
-                cur.execute('CREATE INDEX IF NOT EXISTS idx_task_status_user ON task_status(user_id, created_at DESC)')
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    # 履歴テーブル
+                    cur.execute('''
+                    CREATE TABLE IF NOT EXISTS history (
+                        id SERIAL PRIMARY KEY,
+                        user_id VARCHAR(255) NOT NULL,
+                        school_id VARCHAR(255),
+                        image_base64 TEXT NOT NULL,
+                        explanation TEXT NOT NULL,
+                        timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                    ''')
+                    
+                    # タスクステータステーブル
+                    cur.execute('''
+                    CREATE TABLE IF NOT EXISTS task_status (
+                        task_id VARCHAR(255) PRIMARY KEY,
+                        user_id VARCHAR(255) NOT NULL,
+                        status VARCHAR(50) NOT NULL,
+                        result TEXT,
+                        error_message TEXT,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                    )
+                    ''')
+                    
+                    # インデックスの作成
+                    cur.execute('CREATE INDEX IF NOT EXISTS idx_history_user_timestamp ON history(user_id, timestamp DESC)')
+                    cur.execute('CREATE INDEX IF NOT EXISTS idx_task_status_user ON task_status(user_id, created_at DESC)')
             
-            conn.commit()
-            conn.close()
-            logger.info("Database tables initialized successfully.")
+            logger.info("Database tables initialized or verified successfully.")
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
-
+            # エラーを再度発生させ、呼び出し元（init_db.py）で捕捉できるようにする
+            raise
 
 # Celeryタスク: 画像解析の非同期処理
 @celery.task(bind=True, max_retries=3)
@@ -389,5 +389,4 @@ def internal_error(error):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    # init_db() # 開発環境で起動時に初期化する場合
     app.run(host="0.0.0.0", port=port, debug=False)
