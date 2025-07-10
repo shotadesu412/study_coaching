@@ -130,21 +130,7 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image):
         - 計算しなくていいから、解き方の手順だけ教えてください
         - 日本の中学生や高校生の知識の範囲内で説明してください
 
-        【数式の表記ルール（MathJax対応）】
-        インライン数式は $ $ で囲む、ディスプレイ数式は $$ $$ で囲む
-
-        - 分数：$\\frac{分子}{分母}$ 例：$\\frac{x}{2}$
-        - 累乗：$x^2$, $x^{10}$, $a^{n+1}$
-        - 平方根：$\\sqrt{2}$, $\\sqrt{x+1}$, $\\sqrt[3]{8}$（3乗根）
-        - ギリシャ文字：$\\alpha$, $\\beta$, $\\gamma$, $\\theta$, $\\pi$, $\\omega$
-        - 三角関数：$\\sin \\theta$, $\\cos \\theta$, $\\tan \\theta$
-        - 対数：$\\log_2 x$, $\\ln x$
-        - 総和：$\\sum_{i=1}^{n} i^2$
-        - 積分：$\\int_0^1 x^2 dx$
-        - ベクトル：$\\vec{AB}$ または $\\overrightarrow{AB}$
-        - 極限：$\\lim_{x \\to \\infty} \\frac{1}{x}$
-        - 行列：$\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$
-        - 不等号：$\\leq$, $\\geq$, $\\neq$
+        
 
         【表示形式】
         - 考え方と手順のみ表示
@@ -154,7 +140,7 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image):
         """
         
         gpt_response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4.1",
             messages=[
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
