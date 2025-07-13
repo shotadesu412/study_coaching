@@ -68,7 +68,6 @@ def rate_limit(max_calls=10, period=60):
 # データベース関連
 def get_db_connection():
     """データベース接続を取得する"""
-    # 接続の都度、環境変数を読み込むことで、起動時のタイミング問題を回避する
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
         raise ValueError("DATABASE_URL environment variable is not set.")
@@ -81,7 +80,6 @@ def init_db():
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    # 履歴テーブル
                     cur.execute('''
                     CREATE TABLE IF NOT EXISTS history (
                         id SERIAL PRIMARY KEY,
@@ -92,8 +90,6 @@ def init_db():
                         timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     )
                     ''')
-                    
-                    # タスクステータステーブル
                     cur.execute('''
                     CREATE TABLE IF NOT EXISTS task_status (
                         task_id VARCHAR(255) PRIMARY KEY,
@@ -105,42 +101,55 @@ def init_db():
                         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                     )
                     ''')
-                    
-                    # インデックスの作成
                     cur.execute('CREATE INDEX IF NOT EXISTS idx_history_user_timestamp ON history(user_id, timestamp DESC)')
                     cur.execute('CREATE INDEX IF NOT EXISTS idx_task_status_user ON task_status(user_id, created_at DESC)')
             
             logger.info("Database tables initialized or verified successfully.")
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
-            # エラーを再度発生させ、呼び出し元（init_db.py）で捕捉できるようにする
             raise
 
 # Celeryタスク: 画像解析の非同期処理
 @celery.task(bind=True, max_retries=3)
-def analyze_image_task(self, task_id, user_id, school_id, base64_image):
+def analyze_image_task(self, task_id, user_id, school_id, base64_image, grade_level='junior-high'):
     """画像解析を非同期で実行するタスク"""
     try:
         update_task_status(task_id, 'processing')
         
-        prompt = """
-        この画像に写っている問題を分析して、中学生から高校生の学習者に適した教育的な指導をしてください。
+        # ▼▼▼ 学年に応じてプロンプトを切り替える ▼▼▼
+        if grade_level == 'high-school':
+            prompt = """
+            この画像に写っている問題を分析して、高校生の学習者に適した教育的な指導をしてください。
 
-        【絶対に守ること】
-        - 計算しなくていいから、解き方の手順だけ教えてください
-        - 日本の中学生や高校生の知識の範囲内で説明してください
+            【絶対に守ること】
+            - 計算しなくていいから、解き方の手順だけ教えてください
+            - 日本の高校生の知識の範囲内で、専門用語も適宜使用して説明してください
 
-        
+            【表示形式】
+            - 考え方と手順のみ表示
+            - 重要な数式は $$...$$ で中央揃え表示
 
-        【表示形式】
-        - 考え方と手順のみ表示
-        - 重要な数式は $$...$$ で中央揃え表示
+            まず画像の内容を詳しく分析し、問題文を正確に読み取ってから指導を開始してください。
+            """
+        else:  # デフォルトは中学生向け
+            prompt = """
+            この画像に写っている問題を分析して、中学生の学習者に適した教育的な指導をしてください。
 
-        まず画像の内容を詳しく分析し、問題文を正確に読み取ってから指導を開始してください。
-        """
+            【絶対に守ること】
+            - 計算しなくていいから、解き方の手順だけ教えてください
+            - 日本の中学生の知識の範囲内で、専門用語は避け、平易な言葉で説明してください
+            - できるだけで細かく、わかりやすく説明してください
+
+            【表示形式】
+            - 考え方と手順のみ表示
+            - 重要な数式は $$...$$ で中央揃え表示
+
+            まず画像の内容を詳しく分析し、問題文を正確に読み取ってから指導を開始してください。
+            """
+        # ▲▲▲ プロンプトの切り替えここまで ▲▲▲
         
         gpt_response = client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
@@ -233,6 +242,8 @@ def upload():
     try:
         school_id = request.form.get('school_id', 'default_school')
         user_id = request.form.get('user_id', 'default_user')
+        # ▼▼▼ 学年情報を受け取る ▼▼▼
+        grade_level = request.form.get('grade_level', 'junior-high') 
         
         if 'file' not in request.files:
             return jsonify({"error": "ファイルがありません"}), 400
@@ -259,7 +270,8 @@ def upload():
                     (task_id, user_id, 'pending', datetime.now(), datetime.now())
                 )
         
-        analyze_image_task.apply_async(args=[task_id, user_id, school_id, base64_image], task_id=task_id)
+        # ▼▼▼ Celeryタスクに学年情報を渡す ▼▼▼
+        analyze_image_task.apply_async(args=[task_id, user_id, school_id, base64_image, grade_level], task_id=task_id)
         
         logger.info(f"Task created for user: {user_id}, task_id: {task_id}")
         
@@ -290,7 +302,6 @@ def get_task_status(task_id):
             return jsonify({"error": "タスクが見つかりません"}), 404
         
         response = dict(task)
-        # Convert datetime objects to string
         for key, value in response.items():
             if isinstance(value, datetime):
                 response[key] = value.isoformat()
@@ -322,7 +333,6 @@ def get_history():
                 cur.execute("SELECT COUNT(*) as total FROM history WHERE user_id = %s", (user_id,))
                 total_count = cur.fetchone()['total']
 
-        # Convert datetime objects to string
         for item in history:
             item['timestamp'] = item['timestamp'].isoformat()
         
