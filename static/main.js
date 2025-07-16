@@ -1,7 +1,8 @@
-// main.js - 非同期処理・学年選択対応版
+// main.js - 再質問機能対応版
 
 window.onload = function() {
     loadHistory();
+    setupEventListeners();
 };
 
 document.getElementById('qform').addEventListener('submit', async function(e) {
@@ -18,10 +19,8 @@ document.getElementById('qform').addEventListener('submit', async function(e) {
     const formData = new FormData();
     formData.append('file', file);
     
-    // ▼▼▼ 選択された学年情報を取得して追加 ▼▼▼
     const selectedGrade = document.querySelector('input[name="grade"]:checked').value;
     formData.append('grade_level', selectedGrade);
-    // ▲▲▲ ここまで ▲▲▲
     
     formData.append('school_id', 'default_school');
     formData.append('user_id', 'default_user');
@@ -128,6 +127,16 @@ async function loadHistory() {
                      alt="質問画像"
                      style="max-width: 300px; margin-bottom: 10px; border-radius: 5px;">
                 <div class="explanation">${item.explanation}</div>
+                
+                <button class="re-question-btn" data-history-id="${item.id}">さらに質問する</button>
+                
+                <div class="re-question-form" id="form-${item.id}" style="display: none;">
+                    <textarea placeholder="わからなかったことを詳しく書いてください。"></textarea>
+                    <button class="re-question-submit-btn" data-history-id="${item.id}">送信</button>
+                    <div class="loading-indicator">回答を生成中...</div>
+                </div>
+                
+                <div class="re-question-answer" id="answer-${item.id}"></div>
             `;
             historyDiv.appendChild(itemDiv);
         });
@@ -140,5 +149,78 @@ async function loadHistory() {
         console.error('履歴の読み込みに失敗しました:', error);
         const historyDiv = document.getElementById('history');
         historyDiv.innerHTML = '<p style="color: red;">履歴の読み込みに失敗しました。</p>';
+    }
+}
+
+function setupEventListeners() {
+    const historyDiv = document.getElementById('history');
+
+    historyDiv.addEventListener('click', async (e) => {
+        // 「さらに質問する」ボタンが押された場合
+        if (e.target.classList.contains('re-question-btn')) {
+            const historyId = e.target.dataset.historyId;
+            const form = document.getElementById(`form-${historyId}`);
+            if (form) {
+                form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+
+        // 再質問の「送信」ボタンが押された場合
+        if (e.target.classList.contains('re-question-submit-btn')) {
+            const historyId = e.target.dataset.historyId;
+            await handleReQuestionSubmit(historyId);
+        }
+    });
+}
+
+async function handleReQuestionSubmit(historyId) {
+    const form = document.getElementById(`form-${historyId}`);
+    const textarea = form.querySelector('textarea');
+    const submitBtn = form.querySelector('.re-question-submit-btn');
+    const loadingIndicator = form.querySelector('.loading-indicator');
+    const answerDiv = document.getElementById(`answer-${historyId}`);
+
+    const questionText = textarea.value.trim();
+    if (!questionText) {
+        alert('質問内容を入力してください。');
+        return;
+    }
+
+    submitBtn.disabled = true;
+    loadingIndicator.style.display = 'block';
+    answerDiv.innerHTML = '';
+
+    try {
+        const response = await fetch('/api/re-question', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                history_id: historyId,
+                question_text: questionText
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'サーバーエラーが発生しました。');
+        }
+
+        const data = await response.json();
+        answerDiv.textContent = data.answer;
+        
+        if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
+            await MathJax.typesetPromise([answerDiv]);
+        }
+        
+        textarea.value = ''; // テキストエリアをクリア
+        form.style.display = 'none'; // フォームを非表示
+
+    } catch (error) {
+        answerDiv.innerHTML = `<p style="color: red;">エラー: ${error.message}</p>`;
+    } finally {
+        submitBtn.disabled = false;
+        loadingIndicator.style.display = 'none';
     }
 }

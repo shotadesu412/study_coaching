@@ -13,6 +13,7 @@ import redis
 import psycopg2
 import psycopg2.extras
 
+# ... (既存のコードは変更なし) ...
 # ログ設定
 logging.basicConfig(
     level=logging.INFO,
@@ -217,6 +218,7 @@ def update_task_status(task_id, status, result=None, error_message=None):
     except Exception as e:
         logger.error(f"Error updating task status: {str(e)}")
 
+# ... (既存のルート、アップロード、タスク確認、履歴取得、ヘルスチェックなどの関数は変更なし) ...
 # ルートページ
 @app.route('/')
 def index():
@@ -368,6 +370,82 @@ def health_check():
         "components": {"database": db_status, "redis": redis_status},
         "timestamp": datetime.now().isoformat()
     })
+
+
+# ▼▼▼ ここから追加したコード ▼▼▼
+@app.route('/api/re-question', methods=['POST'])
+@rate_limit(max_calls=10, period=60)
+def re_question():
+    """既存の履歴に対する再質問を処理する"""
+    try:
+        data = request.get_json()
+        history_id = data.get('history_id')
+        question_text = data.get('question_text')
+
+        if not history_id or not question_text:
+            return jsonify({"error": "履歴IDと質問内容が必要です"}), 400
+
+        # データベースから元の履歴を取得
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT image_base64, explanation FROM history WHERE id = %s", (int(history_id),))
+                history_item = cur.fetchone()
+
+        if not history_item:
+            return jsonify({"error": "元の質問が見つかりません"}), 404
+
+        original_explanation = history_item['explanation']
+        base64_image = history_item['image_base64']
+
+        # OpenAIへのプロンプトを作成
+        prompt = f"""
+        ユーザーは以前、画像（添付）で質問をし、以下の解説を受け取りました。
+
+        【以前の解説】
+        ---
+        {original_explanation}
+        ---
+
+        この解説と元の画像を踏まえて、ユーザーから以下の追加質問がありました。
+        この質問に対して、分かりやすく、丁寧に追加の解説をしてください。
+
+        【ユーザーの追加質問】
+        「{question_text}」
+
+        【指示】
+        - ユーザーの追加質問に直接答えてください。
+        - 元の画像と以前の解説内容を考慮して回答してください。
+        - 重要な数式は $$...$$ を使って表現してください。
+        """
+
+        # OpenAI APIを呼び出す
+        gpt_response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": "auto"
+                    }}
+                ]}
+            ],
+            max_tokens=1000,
+            temperature=0.7,
+            timeout=60
+        )
+
+        answer_text = gpt_response.choices[0].message.content.strip()
+        logger.info(f"Successfully answered re-question for history_id: {history_id}")
+
+        return jsonify({"success": True, "answer": answer_text})
+
+    except Exception as e:
+        logger.error(f"Error in re_question: {str(e)}")
+        return jsonify({"error": "再質問の処理中にエラーが発生しました"}), 500
+
+# ▲▲▲ ここまで追加したコード ▲▲▲
+
 
 # エラーハンドラー
 @app.errorhandler(413)

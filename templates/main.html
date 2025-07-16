@@ -55,7 +55,7 @@
       border-radius: 5px;
       background: #fafafa;
     }
-    button[type="submit"] {
+    button[type="submit"], .re-question-submit-btn {
       background: #4285f4;
       color: white;
       border: none;
@@ -65,8 +65,8 @@
       cursor: pointer;
       transition: background 0.3s;
     }
-    button[type="submit"]:hover { background: #357ae8; }
-    button[type="submit"]:disabled { background: #ccc; cursor: not-allowed; }
+    button[type="submit"]:hover, .re-question-submit-btn:hover { background: #357ae8; }
+    button[type="submit"]:disabled, .re-question-submit-btn:disabled { background: #ccc; cursor: not-allowed; }
     #history > div {
       background: white;
       margin: 10px 0;
@@ -78,7 +78,6 @@
     img { max-width: 100%; height: auto; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
     .install-prompt { display: none; }
     
-    /* ▼▼▼ 追加したスタイル ▼▼▼ */
     .grade-selection {
         display: flex;
         gap: 20px;
@@ -90,6 +89,53 @@
         align-items: center;
         gap: 5px;
         cursor: pointer;
+    }
+
+    /* ▼▼▼ 追加したスタイル ▼▼▼ */
+    .re-question-btn {
+        background-color: #f0f0f0;
+        color: #333;
+        border: 1px solid #ccc;
+        padding: 8px 16px;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 15px;
+    }
+    .re-question-btn:hover {
+        background-color: #e0e0e0;
+    }
+    .re-question-form {
+        margin-top: 15px;
+        padding: 15px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        background-color: #fafafa;
+    }
+    .re-question-form textarea {
+        width: 100%;
+        min-height: 80px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        resize: vertical;
+        margin-bottom: 10px;
+    }
+    .re-question-answer {
+        margin-top: 15px;
+        padding: 15px;
+        background-color: #e9f5ff;
+        border-radius: 8px;
+        white-space: pre-wrap; 
+        line-height: 1.8;
+    }
+    .re-question-submit-btn {
+      padding: 10px 20px;
+      font-size: 14px;
+    }
+    .loading-indicator {
+      display: none;
+      margin-top: 10px;
+      color: #555;
     }
     /* ▲▲▲ 追加したスタイルここまで ▲▲▲ */
 
