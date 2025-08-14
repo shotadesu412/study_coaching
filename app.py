@@ -120,7 +120,7 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image, grade_le
         # ▼▼▼ 学年に応じてプロンプトを切り替える ▼▼▼
         if grade_level == 'high-school':
             prompt = """
-            この画像に写っている問題を分析して、高校生の学習者に適した教育的な指導をしてください。
+            あなたは優秀な高校教師です。この画像に写っている問題を分析して、高校生の学習者に適した教育的な指導をしてください。
 
             【絶対に守ること】
             - 計算しなくていいから、解き方の手順だけ教えてください
@@ -129,12 +129,13 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image, grade_le
             【表示形式】
             - 考え方と手順のみ表示
             - 重要な数式は $$...$$ で中央揃え表示
+            - 式に番号を振ってください
 
             まず画像の内容を詳しく分析し、問題文を正確に読み取ってから指導を開始してください。
             """
         else:  # デフォルトは中学生向け
             prompt = """
-            この画像に写っている問題を分析して、中学生の学習者に適した教育的な指導をしてください。
+            あなたは優秀な中学教師です。この画像に写っている問題を分析して、中学生の学習者に適した教育的な指導をしてください。
 
             【絶対に守ること】
             - 計算しなくていいから、解き方の手順だけ教えてください
@@ -144,13 +145,14 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image, grade_le
             【表示形式】
             - 考え方と手順のみ表示
             - 重要な数式は $$...$$ で中央揃え表示
+            - 式に番号を振ってください
 
             まず画像の内容を詳しく分析し、問題文を正確に読み取ってから指導を開始してください。
             """
         # ▲▲▲ プロンプトの切り替えここまで ▲▲▲
         
         gpt_response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-5",
             messages=[
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
@@ -160,7 +162,7 @@ def analyze_image_task(self, task_id, user_id, school_id, base64_image, grade_le
                     }}
                 ]}
             ],
-            max_tokens=1500,
+            max_tokens=2000,
             temperature=0.7,
             timeout=60
         )
@@ -413,7 +415,6 @@ def re_question():
         「{question_text}」
 
         【指示】
-        - ユーザーの追加質問に直接答えてください。
         - 元の画像と以前の解説内容を考慮して回答してください。
         - 重要な数式は $$...$$ を使って表現してください。
         """
